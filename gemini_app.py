@@ -6,9 +6,27 @@ import os
 
 app = Flask(__name__)
 
+
+def validate_api_key(api_key):
+    if not api_key:
+        return False, "Please set the GEMINI_API_KEY environment variable"
+
+    try:
+        test_client = genai.Client(api_key=api_key)
+        # Make a simple test call
+        test_client.models.generate_content(
+            model='gemini-2.0-flash-001',
+            contents='test'
+        )
+        return True, None
+    except Exception:
+        return False, "Invalid API key"
+
+
 load_dotenv()
 api_key = os.getenv('GEMINI_API_KEY')
-client = genai.Client(api_key=api_key)
+is_valid_key, error_message = validate_api_key(api_key)
+client = genai.Client(api_key=api_key) if is_valid_key else None
 
 # HTML template for the web page
 html_template = """
@@ -26,6 +44,9 @@ html_template = """
 <body>
     <h1>Gemini AI Chat</h1>
     <div class="container">
+        {% if not is_valid_key %}
+        <div class="response">{{ response }}</div>
+        {% else %}
         <form method="POST">
             <textarea name="prompt" placeholder="Enter your prompt here...">{{ prompt }}</textarea><br>
             <input type="submit" value="Send">
@@ -35,6 +56,7 @@ html_template = """
             <strong>Response:</strong><br>
             {{ response }}
         </div>
+        {% endif %}
         {% endif %}
     </div>
 </body>
@@ -47,7 +69,9 @@ def home():
     prompt = ''
     response_text = ''
 
-    if request.method == 'POST':
+    if not is_valid_key:
+        response_text = error_message
+    elif request.method == 'POST':
         prompt = request.form.get('prompt', '')
         if prompt:
             response = client.models.generate_content(
@@ -56,7 +80,10 @@ def home():
             )
             response_text = response.text
 
-    return render_template_string(html_template, prompt=prompt, response=response_text)
+    return render_template_string(html_template,
+                                  prompt=prompt,
+                                  response=response_text,
+                                  is_valid_key=is_valid_key)
 
 
 if __name__ == '__main__':
